@@ -476,17 +476,17 @@ def show_experiments(
     if kwargs.get("only_changed", False) or html:
         td.drop_duplicates("cols")
 
-    extra_render_args = {}
+    html_args = {}
     if html:
-        td.dropna("rows")
+        td.dropna("rows", how="all")
         td.column("Experiment")[:] = [
             # remove tree characters
             str(x).encode("ascii", "ignore").strip().decode()
             for x in td.column("Experiment")
         ]
         rel = kwargs.get("out") or "dvc_plots"
-        extra_render_args["output_path"] = (Path.cwd() / rel).resolve()
-        extra_render_args["color_by"] = kwargs.get("sort_by", "Experiment")
+        html_args["output_path"] = (Path.cwd() / rel).resolve()
+        html_args["color_by"] = kwargs.get("sort_by") or "Experiment"
 
     td.render(
         pager=pager,
@@ -497,7 +497,7 @@ def show_experiments(
         csv=csv,
         markdown=markdown,
         html=html,
-        **extra_render_args,
+        **html_args,
     )
 
     if html and kwargs.get("open"):
@@ -507,7 +507,7 @@ def show_experiments(
         if "Microsoft" in uname().release:
             url = Path(rel) / "index.html"
         else:
-            url = Path(extra_render_args["output_path"]) / "index.html"
+            url = Path(html_args["output_path"]) / "index.html"
             url = url.as_uri()
 
         opened = webbrowser.open(url)
