@@ -229,7 +229,7 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
         else:
             self.drop(*to_drop)
 
-    def drop_duplicates(self, axis: str = "rows"):
+    def drop_duplicates(self, axis: str = "rows", nan_is_value: bool = False):
         if axis not in ["rows", "cols"]:
             raise ValueError(
                 f"Invalid 'axis' value {axis}."
@@ -240,9 +240,9 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
             cols_to_drop: List[str] = []
             for n_col, col in enumerate(self.columns):
                 # Cast to str because Text is not hashable error
-                unique_vals = {
-                    str(x) for x in col if str(x) != self._fill_value
-                }
+                unique_vals = {str(x) for x in col}
+                if not nan_is_value and self._fill_value in unique_vals:
+                    unique_vals.remove(self._fill_value)
                 if len(unique_vals) == 1:
                     cols_to_drop.append(self.keys()[n_col])
             self.drop(*cols_to_drop)
