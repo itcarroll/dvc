@@ -12,6 +12,7 @@ from typing import (
     List,
     Mapping,
     MutableSequence,
+    Optional,
     Sequence,
     Set,
     Tuple,
@@ -192,7 +193,9 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
             {k: self._columns[k][i] for k in keys} for i in range(len(self))
         ]
 
-    def dropna(self, axis: str = "rows", how="any"):
+    def dropna(
+        self, axis: str = "rows", how="any", subset: Optional[List] = None
+    ):
         if axis not in ["rows", "cols"]:
             raise ValueError(
                 f"Invalid 'axis' value {axis}."
@@ -210,6 +213,8 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
 
         for n_row, row in enumerate(self):
             for n_col, col in enumerate(row):
+                if subset and self.keys()[n_col] not in subset:
+                    continue
                 if (col == self._fill_value) is match:
                     if axis == "rows":
                         match_line.add(n_row)
@@ -237,7 +242,9 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
         else:
             self.drop(*to_drop)
 
-    def drop_duplicates(self, axis: str = "rows"):
+    def drop_duplicates(
+        self, axis: str = "rows", subset: Optional[List] = None
+    ):
         if axis not in ["rows", "cols"]:
             raise ValueError(
                 f"Invalid 'axis' value {axis}."
@@ -247,6 +254,8 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
         if axis == "cols":
             cols_to_drop: List[str] = []
             for n_col, col in enumerate(self.columns):
+                if subset and self.keys()[n_col] not in subset:
+                    continue
                 # Cast to str because Text is not hashable error
                 unique_vals = {str(x) for x in col if x != self._fill_value}
                 if len(unique_vals) == 1:
@@ -257,6 +266,13 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
             unique_rows = []
             rows_to_drop: List[int] = []
             for n_row, row in enumerate(self):
+                if subset:
+                    row = [
+                        col
+                        for n_col, col in enumerate(row)
+                        if self.keys()[n_col] in subset
+                    ]
+
                 tuple_row = tuple(row)
                 if tuple_row in unique_rows:
                     rows_to_drop.append(n_row)
