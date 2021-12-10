@@ -144,12 +144,25 @@ def test_fill_value():
 
 
 def test_drop():
-    td = TabularData(["col1", "col2", "col3"])
-    td.append(["foo", "bar", "baz"])
-    assert list(td) == [["foo", "bar", "baz"]]
+    td = TabularData(["col1", "col2", "col3", "other"])
+    td.append(["foo", "bar", "baz", "other_val"])
+    assert list(td) == [["foo", "bar", "baz", "other_val"]]
     td.drop("col2")
-    assert td.keys() == ["col1", "col3"]
-    assert list(td) == [["foo", "baz"]]
+    assert td.keys() == ["col1", "col3", "other"]
+    assert list(td) == [["foo", "baz", "other_val"]]
+
+    td.drop("col*")
+    assert td.keys() == ["other"]
+    assert list(td) == [["other_val"]]
+
+
+def test_drop_keep():
+    td = TabularData(["col1", "col2", "col3", "other"])
+    td.append(["foo", "bar", "baz", "other_val"])
+
+    td.drop("*", keep=["col*"])
+    assert td.keys() == ["col1", "col2", "col3"]
+    assert list(td) == [["foo", "bar", "baz"]]
 
 
 def test_row_from_dict():

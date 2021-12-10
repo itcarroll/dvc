@@ -1,4 +1,5 @@
 from collections import abc
+from fnmatch import fnmatch
 from itertools import chain, repeat, zip_longest
 from operator import itemgetter
 from typing import (
@@ -124,10 +125,17 @@ class TabularData(MutableSequence[Sequence["CellT"]]):
     def shape(self) -> Tuple[int, int]:
         return len(self.columns), len(self)
 
-    def drop(self, *col_names: str) -> None:
-        for col_name in col_names:
-            self._keys.remove(col_name)
-            self._columns.pop(col_name)
+    def drop(self, *col_names: str, keep: Optional[List[str]] = None) -> None:
+        to_remove = set()
+        keep = keep or []
+        for key in self._keys:
+            if any(fnmatch(key, k) for k in keep):
+                continue
+            if any(fnmatch(key, d) for d in col_names):
+                to_remove.add(key)
+        for col in to_remove:
+            self._keys.remove(col)
+            self._columns.pop(col)
 
     def rename(self, from_col_name: str, to_col_name: str) -> None:
         self._columns[to_col_name] = self._columns.pop(from_col_name)
