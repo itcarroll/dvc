@@ -3,7 +3,7 @@ import logging
 from collections import Counter, OrderedDict, defaultdict
 from datetime import date, datetime
 from fnmatch import fnmatch
-from typing import TYPE_CHECKING, Dict, Iterable, Optional
+from typing import TYPE_CHECKING
 
 from funcy import compact, lmap
 
@@ -30,64 +30,6 @@ FILL_VALUE = "-"
 FILL_VALUE_ERRORED = "!"
 
 
-def _filter_name(names, label, filter_strs):
-    ret = defaultdict(dict)
-    path_filters = defaultdict(list)
-
-    for filter_s in filter_strs:
-        path, _, name = filter_s.rpartition(":")
-        path_filters[path].append(name)
-
-    for path, filters in path_filters.items():
-        if path:
-            match_paths = [path]
-        else:
-            match_paths = names.keys()
-        for match_path in match_paths:
-            for f in filters:
-                matches = [
-                    name for name in names[match_path] if fnmatch(name, f)
-                ]
-                if not matches:
-                    raise InvalidArgumentError(
-                        f"'{f}' does not match any known {label}"
-                    )
-                ret[match_path].update({match: None for match in matches})
-
-    return ret
-
-
-def _filter_names(
-    names: Dict[str, Dict[str, None]],
-    label: str,
-    include: Optional[Iterable],
-    exclude: Optional[Iterable],
-):
-    if include and exclude:
-        intersection = set(include) & set(exclude)
-        if intersection:
-            values = ", ".join(intersection)
-            raise InvalidArgumentError(
-                f"'{values}' specified in both --include-{label} and"
-                f" --exclude-{label}"
-            )
-
-    if include:
-        ret = _filter_name(names, label, include)
-    else:
-        ret = names
-
-    if exclude:
-        to_remove = _filter_name(names, label, exclude)
-        for path in to_remove:
-            if path in ret:
-                for key in to_remove[path]:
-                    if key in ret[path]:
-                        del ret[path][key]
-
-    return ret
-
-
 def _update_names(names, items):
     for name, item in items:
         item = item.get("data", {})
@@ -105,18 +47,6 @@ def _collect_names(all_experiments, **kwargs):
             exp = exp_data.get("data", {})
             _update_names(metric_names, exp.get("metrics", {}).items())
             _update_names(param_names, exp.get("params", {}).items())
-    metric_names = _filter_names(
-        metric_names,
-        "metrics",
-        kwargs.get("include_metrics"),
-        kwargs.get("exclude_metrics"),
-    )
-    param_names = _filter_names(
-        param_names,
-        "params",
-        kwargs.get("include_params"),
-        kwargs.get("exclude_params"),
-    )
 
     return metric_names, param_names
 
@@ -310,17 +240,6 @@ def _extend_row(row, names, items, precision, fill_value=FILL_VALUE):
             row.append(ui.rich_text(str(_format_field(value, precision))))
 
 
-def _parse_filter_list(param_list):
-    ret = []
-    for param_str in param_list:
-        path, _, param_str = param_str.rpartition(":")
-        if path:
-            ret.extend(f"{path}:{param}" for param in param_str.split(","))
-        else:
-            ret.extend(param_str.split(","))
-    return ret
-
-
 def experiments_table(
     all_experiments,
     headers,
@@ -383,26 +302,16 @@ def baseline_styler(typ):
 
 def show_experiments(
     all_experiments,
+    keep=None,
+    drop=None,
     pager=True,
-    no_timestamp=False,
     csv=False,
     markdown=False,
     **kwargs,
 ):
     from funcy.seqs import flatten as flatten_list
 
-    include_metrics = _parse_filter_list(kwargs.pop("include_metrics", []))
-    exclude_metrics = _parse_filter_list(kwargs.pop("exclude_metrics", []))
-    include_params = _parse_filter_list(kwargs.pop("include_params", []))
-    exclude_params = _parse_filter_list(kwargs.pop("exclude_params", []))
-
-    metric_names, param_names = _collect_names(
-        all_experiments,
-        include_metrics=include_metrics,
-        exclude_metrics=exclude_metrics,
-        include_params=include_params,
-        exclude_params=exclude_params,
-    )
+    metric_names, param_names = _collect_names(all_experiments)
 
     headers = [
         "Experiment",
@@ -434,10 +343,9 @@ def show_experiments(
         kwargs.get("iso"),
     )
 
-    if no_timestamp:
-        td.drop("Created")
-
     for col in ("State", "Executor"):
+        if keep and col in keep:
+            continue
         if td.is_empty(col):
             td.drop(col)
 
@@ -472,7 +380,15 @@ def show_experiments(
     )
 
     if kwargs.get("only_changed", False):
-        td.drop_duplicates("cols")
+        subset = None
+        if keep:
+            subset = [
+                x for x in td.keys() if not any(fnmatch(x, k) for k in keep)
+            ]
+        td.drop_duplicates("cols", subset=subset)
+
+    if drop is not None:
+        td.drop(*drop, keep=keep)
 
     td.render(
         pager=pager,
@@ -527,11 +443,8 @@ class CmdExperimentsShow(CmdBase):
 
             show_experiments(
                 all_experiments,
-                include_metrics=self.args.include_metrics,
-                exclude_metrics=self.args.exclude_metrics,
-                include_params=self.args.include_params,
-                exclude_params=self.args.exclude_params,
-                no_timestamp=self.args.no_timestamp,
+                keep=self.args.keep,
+                drop=self.args.drop,
                 sort_by=self.args.sort_by,
                 sort_order=self.args.sort_order,
                 precision=precision,
@@ -942,32 +855,18 @@ def add_parser(subparsers, parent_parser):
         help="Do not pipe output into a pager.",
     )
     experiments_show_parser.add_argument(
-        "--include-metrics",
+        "--keep",
         action="append",
         default=[],
-        help="Include the specified metrics in output table.",
-        metavar="<metrics_list>",
+        help="Always show the specified columns in output table.",
+        metavar="<column_list>",
     )
     experiments_show_parser.add_argument(
-        "--exclude-metrics",
+        "--drop",
         action="append",
         default=[],
-        help="Exclude the specified metrics from output table.",
-        metavar="<metrics_list>",
-    )
-    experiments_show_parser.add_argument(
-        "--include-params",
-        action="append",
-        default=[],
-        help="Include the specified params in output table.",
-        metavar="<params_list>",
-    )
-    experiments_show_parser.add_argument(
-        "--exclude-params",
-        action="append",
-        default=[],
-        help="Exclude the specified params from output table.",
-        metavar="<params_list>",
+        help="Remove the specified columns from output table.",
+        metavar="<column_list>",
     )
     experiments_show_parser.add_argument(
         "--param-deps",
@@ -988,12 +887,6 @@ def add_parser(subparsers, parent_parser):
         ),
         choices=("asc", "desc"),
         default="asc",
-    )
-    experiments_show_parser.add_argument(
-        "--no-timestamp",
-        action="store_true",
-        default=False,
-        help="Do not show experiment timestamps.",
     )
     experiments_show_parser.add_argument(
         "--sha",
