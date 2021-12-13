@@ -378,7 +378,7 @@ def prepare_exp_id(kwargs) -> "RichText":
 
 
 def baseline_styler(typ):
-    return {"style": "bold"} if typ == "baseline" else {}
+    return {"style": "bold"} if typ == "baseline" else {"style": "default"}
 
 
 def show_experiments(
@@ -442,6 +442,9 @@ def show_experiments(
             td.drop(col)
 
     row_styles = lmap(baseline_styler, td.column("typ"))
+    for n, row_style in enumerate(row_styles):
+        if n % 2 != 0:
+            row_style["style"] += " on grey23"
 
     if not csv:
         merge_headers = ["Experiment", "rev", "typ", "parent"]
