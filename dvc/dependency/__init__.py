@@ -19,7 +19,7 @@ SCHEMA: Mapping[str, Any] = {
 
 
 def _flatten(l):
-    for item in l:
+    for item in filter(None, l):
         if isinstance(item, list):
             yield from item
         else:
