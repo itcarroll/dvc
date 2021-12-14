@@ -13,7 +13,7 @@ from dvc.stage.serialize import split_params_deps
 
 @pytest.fixture
 def stage_data():
-    return {"cmd": "command", "deps": ["foo"], "outs": ["bar"]}
+    return {"cmd": "command", "deps": [["foo"]], "outs": ["bar"]}
 
 
 @pytest.fixture

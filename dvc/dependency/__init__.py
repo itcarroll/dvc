@@ -18,6 +18,14 @@ SCHEMA: Mapping[str, Any] = {
 }
 
 
+def _flatten(l):
+    for item in l:
+        if isinstance(item, list):
+            yield from item
+        else:
+            yield item
+
+
 def _get(stage, p, info):
     if info and info.get(RepoDependency.PARAM_REPO):
         repo = info.pop(RepoDependency.PARAM_REPO)
@@ -41,7 +49,7 @@ def loadd_from(stage, d_list):
 def loads_from(stage, s_list, erepo=None):
     assert isinstance(s_list, list)
     info = {RepoDependency.PARAM_REPO: erepo} if erepo else {}
-    return [_get(stage, s, info.copy()) for s in s_list]
+    return [_get(stage, s, info.copy()) for s in _flatten(s_list)]
 
 
 def _merge_params(s_list):
