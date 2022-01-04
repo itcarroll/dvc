@@ -1,3 +1,4 @@
+import json
 import os
 import posixpath
 from pathlib import Path
@@ -125,24 +126,31 @@ def test_plots_diff_vega(dvc, mocker, capsys, plots_data):
     cmd = cli_args.func(cli_args)
     mocker.patch("dvc.repo.plots.diff.diff", return_value=plots_data)
     mocker.patch(
-        "dvc.command.plots.find_vega", return_value="vega_json_content"
+        "dvc.command.plots.VegaRenderer.asdict",
+        return_value={"this": "is vega json"},
     )
-    render_mock = mocker.patch(
-        "dvc.command.plots.render", return_value="html_path"
-    )
+    render_mock = mocker.patch("dvc.command.plots.render")
     assert cmd.run() == 0
 
     out, _ = capsys.readouterr()
 
-    assert "vega_json_content" in out
+    assert json.dumps({"this": "is vega json"}) in out
     render_mock.assert_not_called()
 
 
-def test_plots_diff_open(tmp_dir, dvc, mocker, capsys, plots_data):
+@pytest.mark.parametrize("auto_open", [True, False])
+def test_plots_diff_open(tmp_dir, dvc, mocker, capsys, plots_data, auto_open):
     mocked_open = mocker.patch("webbrowser.open", return_value=True)
-    cli_args = parse_args(
-        ["plots", "diff", "--targets", "plots.csv", "--open"]
-    )
+
+    args = ["plots", "diff", "--targets", "plots.csv"]
+
+    if auto_open:
+        with dvc.config.edit() as conf:
+            conf["plots"]["auto_open"] = True
+    else:
+        args.append("--open")
+
+    cli_args = parse_args(args)
     cmd = cli_args.func(cli_args)
     mocker.patch("dvc.repo.plots.diff.diff", return_value=plots_data)
 
@@ -243,6 +251,8 @@ def test_should_call_render(tmp_dir, mocker, capsys, plots_data, output):
 
     output = output or "dvc_plots"
     index_path = tmp_dir / output / "index.html"
+    renderers = mocker.MagicMock()
+    mocker.patch("dvc.command.plots.match_renderers", return_value=renderers)
     render_mock = mocker.patch(
         "dvc.command.plots.render", return_value=index_path
     )
@@ -253,5 +263,37 @@ def test_should_call_render(tmp_dir, mocker, capsys, plots_data, output):
     assert index_path.as_uri() in out
 
     render_mock.assert_called_once_with(
-        cmd.repo, plots_data, path=tmp_dir / output, html_template_path=None
+        cmd.repo, renderers, path=tmp_dir / output, html_template_path=None
     )
+
+
+def test_plots_diff_json(dvc, mocker, capsys):
+    cli_args = parse_args(
+        [
+            "plots",
+            "diff",
+            "HEAD~10",
+            "HEAD~1",
+            "--json",
+            "--targets",
+            "plot.csv",
+            "-o",
+            "out",
+        ]
+    )
+    cmd = cli_args.func(cli_args)
+
+    data = mocker.MagicMock()
+    mocker.patch("dvc.repo.plots.diff.diff", return_value=data)
+
+    renderers = mocker.MagicMock()
+    mocker.patch("dvc.command.plots.match_renderers", return_value=renderers)
+    render_mock = mocker.patch("dvc.command.plots.render")
+
+    show_json_mock = mocker.patch("dvc.command.plots._show_json")
+
+    assert cmd.run() == 0
+
+    show_json_mock.assert_called_once_with(renderers, "out")
+
+    render_mock.assert_not_called()
